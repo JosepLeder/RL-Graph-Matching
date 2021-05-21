@@ -16,7 +16,7 @@ class GraphMatchingEnv(object):
         self.nodes_set = []
         self.steps = 0
         self.terminated = False
-        self.graph = self.orgin_graph
+        self.graph = self.orgin_graph.copy()
         num = np.random.randint(3, 31)
         sub_graph_nodes = np.random.choice(np.arange(self.num_nodes), size=num, replace=False)
         self.sub_graph = np.zeros([num, num])  # 随机生成一个可以匹配的新子图,节点数: [3, 30]
