@@ -1,11 +1,27 @@
 import numpy as np
 import networkx as nx
+import matplotlib.pyplot as plt
 from networkx.algorithms import isomorphism
 
 class GraphMatchingEnv(object):
 
     def __init__(self) -> None:
         self.graph = np.load("./source.npy")  # 母图, 邻接矩阵[可达为1, 不可达为0]
+
+        # # 绘制母图
+        # g = nx.DiGraph()
+        # nodes = range(self.graph.shape[0])
+        # g.add_nodes_from(nodes)
+        # for i in nodes:
+        #     for j in nodes:
+        #         if self.graph[i, j] == 1:
+        #             g.add_edge(i, j)
+        # position = nx.circular_layout(g)
+        # nx.draw_networkx_nodes(g, position, nodelist=nodes, node_color="r")
+        # nx.draw_networkx_edges(g, position)
+        # nx.draw_networkx_labels(g, position)
+        # plt.show()
+
         self.num_nodes = self.graph.shape[0]
         self.orgin_graph = self.graph.copy()  # 保存母图的复制，在reset和匹配子图时使用
         self.sub_graph = None  # 子图, 邻接矩阵
@@ -19,7 +35,18 @@ class GraphMatchingEnv(object):
         self.terminated = False
         self.graph = self.orgin_graph.copy()
         num = np.random.randint(3, 31)
-        sub_graph_nodes = np.random.choice(np.arange(self.num_nodes), size=num, replace=False)
+        sub_graph_nodes = [np.random.randint(0, self.num_nodes)]
+        al_sub_graph_nodes = [True] * self.num_nodes
+        al_nodes = []
+        al_sub_graph_nodes[sub_graph_nodes[0]] = False
+        for i in range(num-1):
+            for j in range(self.num_nodes):
+                    if self.graph[j, sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
+                        al_nodes.append(j)
+            al_num = np.random.randint(0, len(al_nodes))
+            sub_graph_nodes.append(al_nodes[al_num])
+            al_sub_graph_nodes[al_nodes[al_num]] = False
+            del al_nodes[al_num]
         self.sub_graph = np.zeros([num, num])  # 随机生成一个可以匹配的新子图,节点数: [3, 30]
 
         for i_1, i_2 in enumerate(sub_graph_nodes):
@@ -61,6 +88,12 @@ class GraphMatchingEnv(object):
                     g2.add_edge(i, j)
         DiGM = isomorphism.DiGraphMatcher(g1, g2)
         if DiGM.is_isomorphic():
+            # # 输出两子图信息
+            # print(g1.nodes)
+            # print(g1.edges)
+            # print(g2.nodes)
+            # print(g2.edges)
+            # print(DiGM.mapping)
             return True
         else:
             return False
@@ -77,7 +110,13 @@ class GraphMatchingEnv(object):
 
     def get_valid_actions(self):
         # TODO: 不能选重复的点, self.nodes_set中储存之前选过的点, actions是长为self.num_nodes的数组, 如果该点可以选择则为1,否则为0
-        actions = [1]*self.num_nodes
+        if len(self.nodes_set) == 0:
+            return [i for i in range(self.num_nodes)]
+        actions = [0]*self.num_nodes
+        for i in self.nodes_set:
+            for j in range(self.num_nodes):
+                if self.orgin_graph[i, j]:
+                    actions[j] = 1
         for i in self.nodes_set:
             actions[i] = 0
         return actions
