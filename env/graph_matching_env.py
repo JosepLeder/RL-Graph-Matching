@@ -1,5 +1,6 @@
 import numpy as np
-
+import networkx as nx
+from networkx.algorithms import isomorphism
 
 class GraphMatchingEnv(object):
 
@@ -45,7 +46,24 @@ class GraphMatchingEnv(object):
 
     def is_match(self) -> bool:
         # TODO: 判断当前图是否匹配
-        return True
+        if not self.is_terminated():
+            return False
+        g1 = nx.DiGraph()  # g1为子图
+        g2 = nx.DiGraph()  # g2为母图生成的子图
+        nodes = range(self.sub_graph.shape[0])
+        g1.add_nodes_from(nodes)
+        g2.add_nodes_from(nodes)
+        for i in nodes:
+            for j in nodes:
+                if self.sub_graph[i, j] == 1:
+                    g1.add_edge(i, j)
+                if self.orgin_graph[self.nodes_set[i], self.nodes_set[j]] == 1:
+                    g2.add_edge(i, j)
+        DiGM = isomorphism.DiGraphMatcher(g1, g2)
+        if DiGM.is_isomorphic():
+            return True
+        else:
+            return False
 
     def is_terminated(self) -> bool:
         return self.terminated
