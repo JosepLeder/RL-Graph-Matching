@@ -43,9 +43,9 @@ class GraphMatchingEnv(object):
             for j in range(self.num_nodes):
                     if self.graph[j, sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
                         al_nodes.append(j)
+                        al_sub_graph_nodes[j] = False
             al_num = np.random.randint(0, len(al_nodes))
             sub_graph_nodes.append(al_nodes[al_num])
-            al_sub_graph_nodes[al_nodes[al_num]] = False
             del al_nodes[al_num]
         self.sub_graph = np.zeros([num, num])  # 随机生成一个可以匹配的新子图,节点数: [3, 30]
 
@@ -54,6 +54,31 @@ class GraphMatchingEnv(object):
                 self.sub_graph[i_1, j_1] = self.graph[i_2, j_2]
         state = {"graph": self.graph, "sub_graph": self.sub_graph}
         return state
+
+    def sampler(self):
+        sampler_graph = self.orgin_graph
+        num = np.random.randint(3, 31)
+        sub_graph_nodes = [np.random.randint(0, sampler_graph.shape[0])]
+        al_sub_graph_nodes = [True] * sampler_graph.shape[0]
+        al_nodes = []
+        al_sub_graph_nodes[sub_graph_nodes[0]] = False
+        for i in range(num-1):
+            for j in range(sampler_graph.shape[0]):
+                    if sampler_graph[j, sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
+                        al_nodes.append(j)
+                        al_sub_graph_nodes[j] = False
+            al_num = np.random.randint(0, len(al_nodes))
+            sub_graph_nodes.append(al_nodes[al_num])
+            del al_nodes[al_num]
+        sub_graph = np.zeros([num, num])
+        for i_1, i_2 in enumerate(sub_graph_nodes):
+            for j_1, j_2 in enumerate(sub_graph_nodes):
+                sub_graph[i_1, j_1] = sampler_graph[i_2, j_2]
+        for i in range(num):
+            for j in range(sampler_graph.shape[0]):
+                sampler_graph[sub_graph_nodes[i], j] = 0
+            yield [sampler_graph, sub_graph, sub_graph_nodes[i]]
+
 
     def step(self, action):
         """
