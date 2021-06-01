@@ -25,6 +25,9 @@ class GraphMatchingEnv(object):
         self.num_nodes = self.graph.shape[0]
         self.orgin_graph = self.graph.copy()  # 保存母图的复制，在reset和匹配子图时使用
         self.sub_graph = None  # 子图, 邻接矩阵
+        self.sub_graph_nodes = None
+        self.sub_graph_nodes_num = None
+        self.sub_step = None
         self.nodes_set = []
         self.steps = 0
         self.terminated = False
@@ -34,51 +37,58 @@ class GraphMatchingEnv(object):
         self.steps = 0
         self.terminated = False
         self.graph = self.orgin_graph.copy()
-        num = np.random.randint(3, 31)
-        sub_graph_nodes = [np.random.randint(0, self.num_nodes)]
+        self.sub_step = 0
+        self.sub_graph_nodes_num = np.random.randint(3, 31)
+        self.sub_graph_nodes = [np.random.randint(0, self.num_nodes)]
         al_sub_graph_nodes = [True] * self.num_nodes
         al_nodes = []
-        al_sub_graph_nodes[sub_graph_nodes[0]] = False
-        for i in range(num-1):
+        al_sub_graph_nodes[self.sub_graph_nodes[0]] = False
+        for i in range(self.sub_graph_nodes_num-1):
             for j in range(self.num_nodes):
-                    if self.graph[j, sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
+                    if self.graph[j, self.sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
                         al_nodes.append(j)
                         al_sub_graph_nodes[j] = False
             al_num = np.random.randint(0, len(al_nodes))
-            sub_graph_nodes.append(al_nodes[al_num])
+            self.sub_graph_nodes.append(al_nodes[al_num])
             del al_nodes[al_num]
-        self.sub_graph = np.zeros([num, num])  # 随机生成一个可以匹配的新子图,节点数: [3, 30]
+        self.sub_graph = np.zeros([self.sub_graph_nodes_num, self.sub_graph_nodes_num])  # 随机生成一个可以匹配的新子图,节点数: [3, 30]
 
-        for i_1, i_2 in enumerate(sub_graph_nodes):
-            for j_1, j_2 in enumerate(sub_graph_nodes):
+        for i_1, i_2 in enumerate(self.sub_graph_nodes):
+            for j_1, j_2 in enumerate(self.sub_graph_nodes):
                 self.sub_graph[i_1, j_1] = self.graph[i_2, j_2]
         state = {"graph": self.graph, "sub_graph": self.sub_graph}
         return state
 
-    def sampler(self):
-        sampler_graph = self.orgin_graph
-        num = np.random.randint(3, 31)
-        sub_graph_nodes = [np.random.randint(0, sampler_graph.shape[0])]
-        al_sub_graph_nodes = [True] * sampler_graph.shape[0]
-        al_nodes = []
-        al_sub_graph_nodes[sub_graph_nodes[0]] = False
-        for i in range(num-1):
-            for j in range(sampler_graph.shape[0]):
-                    if sampler_graph[j, sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
-                        al_nodes.append(j)
-                        al_sub_graph_nodes[j] = False
-            al_num = np.random.randint(0, len(al_nodes))
-            sub_graph_nodes.append(al_nodes[al_num])
-            del al_nodes[al_num]
-        sub_graph = np.zeros([num, num])
-        for i_1, i_2 in enumerate(sub_graph_nodes):
-            for j_1, j_2 in enumerate(sub_graph_nodes):
-                sub_graph[i_1, j_1] = sampler_graph[i_2, j_2]
-        for i in range(num):
-            for j in range(sampler_graph.shape[0]):
-                sampler_graph[sub_graph_nodes[i], j] = 0
-            yield [sampler_graph, sub_graph, sub_graph_nodes[i]]
+    def get_correct_action(self):
+        self.sub_step += 1
+        if self.sub_step <= self.sub_graph_nodes_num:
+            return self.sub_graph_nodes[self.sub_step-1]
+        else:
+            return None
 
+    # def sampler(self):
+    #     sampler_graph = self.orgin_graph
+    #     num = np.random.randint(3, 31)
+    #     sub_graph_nodes = [np.random.randint(0, sampler_graph.shape[0])]
+    #     al_sub_graph_nodes = [True] * sampler_graph.shape[0]
+    #     al_nodes = []
+    #     al_sub_graph_nodes[sub_graph_nodes[0]] = False
+    #     for i in range(num-1):
+    #         for j in range(sampler_graph.shape[0]):
+    #                 if sampler_graph[j, sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
+    #                     al_nodes.append(j)
+    #                     al_sub_graph_nodes[j] = False
+    #         al_num = np.random.randint(0, len(al_nodes))
+    #         sub_graph_nodes.append(al_nodes[al_num])
+    #         del al_nodes[al_num]
+    #     sub_graph = np.zeros([num, num])
+    #     for i_1, i_2 in enumerate(sub_graph_nodes):
+    #         for j_1, j_2 in enumerate(sub_graph_nodes):
+    #             sub_graph[i_1, j_1] = sampler_graph[i_2, j_2]
+    #     for i in range(num):
+    #         for j in range(sampler_graph.shape[0]):
+    #             sampler_graph[sub_graph_nodes[i], j] = 0
+    #         yield [sampler_graph, sub_graph, sub_graph_nodes[i]]
 
     def step(self, action):
         """
