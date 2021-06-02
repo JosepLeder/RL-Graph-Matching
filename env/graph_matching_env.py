@@ -1,99 +1,84 @@
 import numpy as np
 import networkx as nx
-import matplotlib.pyplot as plt
 from networkx.algorithms import isomorphism
+
 
 class GraphMatchingEnv(object):
 
     def __init__(self) -> None:
-        self.graph = np.load("./source.npy")  # 母图, 邻接矩阵[可达为1, 不可达为0]
-
-        # # 绘制母图
-        # g = nx.DiGraph()
-        # nodes = range(self.graph.shape[0])
-        # g.add_nodes_from(nodes)
-        # for i in nodes:
-        #     for j in nodes:
-        #         if self.graph[i, j] == 1:
-        #             g.add_edge(i, j)
-        # position = nx.circular_layout(g)
-        # nx.draw_networkx_nodes(g, position, nodelist=nodes, node_color="r")
-        # nx.draw_networkx_edges(g, position)
-        # nx.draw_networkx_labels(g, position)
-        # plt.show()
-
-        self.num_nodes = self.graph.shape[0]
-        self.orgin_graph = self.graph.copy()  # 保存母图的复制，在reset和匹配子图时使用
+        self.graph = np.load("../data/source.npy")  # 母图, 邻接矩阵[可达为1, 不可达为0]
+        self.origin_graph = self.graph.copy()  # 保存母图的复制，在reset和匹配子图时使用
         self.sub_graph = None  # 子图, 邻接矩阵
-        self.nodes_set = []
+        self.edge_index = []  # shape:[2, num_edges]
+        for i in range(self.graph.shape[0]):
+            idx = np.where(self.graph[i] > 0)[0]
+            idx = np.array([np.ones_like(idx) * i, idx])
+            self.edge_index.append(idx)
+
+        self.num_graph_nodes = self.graph.shape[0]
+        self.num_subgraph_nodes = 0
+        self.sub_graph_nodes = None
+        self.nodes_sorted = None
+        self.nodes_selected = None
         self.steps = 0
         self.terminated = False
 
     def reset(self):
-        self.nodes_set = []
+        self.nodes_selected = []
         self.steps = 0
         self.terminated = False
-        self.graph = self.orgin_graph.copy()
-        num = np.random.randint(3, 31)
-        sub_graph_nodes = [np.random.randint(0, self.num_nodes)]
-        al_sub_graph_nodes = [True] * self.num_nodes
-        al_nodes = []
-        al_sub_graph_nodes[sub_graph_nodes[0]] = False
-        for i in range(num-1):
-            for j in range(self.num_nodes):
-                    if self.graph[j, sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
-                        al_nodes.append(j)
-            al_num = np.random.randint(0, len(al_nodes))
-            sub_graph_nodes.append(al_nodes[al_num])
-            al_sub_graph_nodes[al_nodes[al_num]] = False
-            del al_nodes[al_num]
-        self.sub_graph = np.zeros([num, num])  # 随机生成一个可以匹配的新子图,节点数: [3, 30]
+        self.graph = self.origin_graph.copy()
 
-        for i_1, i_2 in enumerate(sub_graph_nodes):
-            for j_1, j_2 in enumerate(sub_graph_nodes):
+        # generate a random subgraph, number of nodes: [3, 30]
+        # self.num_subgraph_nodes = np.random.randint(3, 31)
+        self.num_subgraph_nodes = 5
+        self.sub_graph_nodes = [np.random.randint(0, self.num_graph_nodes)]
+        al_sub_graph_nodes = [True] * self.num_graph_nodes
+        al_nodes = []
+        al_sub_graph_nodes[self.sub_graph_nodes[0]] = False
+        for i in range(self.num_subgraph_nodes - 1):
+            for j in range(self.num_graph_nodes):
+                if self.graph[j, self.sub_graph_nodes[-1]] and al_sub_graph_nodes[j]:
+                    al_nodes.append(j)
+                    al_sub_graph_nodes[j] = False
+            al_num = np.random.randint(0, len(al_nodes))
+            self.sub_graph_nodes.append(al_nodes[al_num])
+            del al_nodes[al_num]
+        self.sub_graph = np.zeros([self.num_subgraph_nodes, self.num_subgraph_nodes])
+
+        for i_1, i_2 in enumerate(self.sub_graph_nodes):
+            for j_1, j_2 in enumerate(self.sub_graph_nodes):
                 self.sub_graph[i_1, j_1] = self.graph[i_2, j_2]
-        state = {"graph": self.graph, "sub_graph": self.sub_graph}
+
+        # sort subgraph nodes by connectivity
+        connectivity = np.sum(self.sub_graph, axis=1)
+        self.nodes_sorted = np.argsort(connectivity)
+
+        val_actions = self.get_valid_actions()
+        node_feats = self.get_node_features(val_actions)
+        edge_indexes = self.get_edge_indexes(val_actions)
+        state = {"x": node_feats, "edge_index": edge_indexes, "valid_actions": val_actions}
         return state
 
-    def step(self, action):
-        """
-            action: int, 表示第几个点, [0, self.num_nodes - 1]
-        """
-        self.steps += 1
-        if self.steps == self.sub_graph.shape[0]:
-            self.terminated = True
-        self.nodes_set.append(action)
-        # TODO: 选择了一个点后, 将该点的向量全置为0, 但其他点到该点的路径不变
-        # state包含了self.graph和self.sub_graph
-        for i in range(self.num_nodes):
-            self.graph[action, i] = 0
-        next_state = {"graph": self.graph, "sub_graph": self.sub_graph}
-        reward = self.get_simple_reward()
-        return next_state, reward
-
     def is_match(self) -> bool:
-        # TODO: 判断当前图是否匹配
-        if not self.is_terminated():
-            return False
+        # if not self.is_terminated():
+        #     return False
         g1 = nx.DiGraph()  # g1为子图
         g2 = nx.DiGraph()  # g2为母图生成的子图
-        nodes = range(self.sub_graph.shape[0])
+        # judge all nodes
+        # nodes = range(self.sub_graph.shape[0])
+        # only judge selected nodes
+        nodes = range(len(self.nodes_selected))
         g1.add_nodes_from(nodes)
         g2.add_nodes_from(nodes)
         for i in nodes:
             for j in nodes:
-                if self.sub_graph[i, j] == 1:
+                if self.sub_graph[self.nodes_sorted[i], self.nodes_sorted[j]] == 1:
                     g1.add_edge(i, j)
-                if self.orgin_graph[self.nodes_set[i], self.nodes_set[j]] == 1:
+                if self.origin_graph[self.nodes_selected[i], self.nodes_selected[j]] == 1:
                     g2.add_edge(i, j)
         DiGM = isomorphism.DiGraphMatcher(g1, g2)
         if DiGM.is_isomorphic():
-            # # 输出两子图信息
-            # print(g1.nodes)
-            # print(g1.edges)
-            # print(g2.nodes)
-            # print(g2.edges)
-            # print(DiGM.mapping)
             return True
         else:
             return False
@@ -101,32 +86,80 @@ class GraphMatchingEnv(object):
     def is_terminated(self) -> bool:
         return self.terminated
 
-    def get_simple_reward(self):
-        # TODO: 如果图相匹配则返回1, 否则0
+    def get_simple_reward(self) -> float:
         if self.is_match():
             return 1
         else:
             return 0
 
     def get_valid_actions(self):
-        # TODO: 不能选重复的点, self.nodes_set中储存之前选过的点, actions是长为self.num_nodes的数组, 如果该点可以选择则为1,否则为0
-        if len(self.nodes_set) == 0:
-            return [i for i in range(self.num_nodes)]
-        actions = [0]*self.num_nodes
-        for i in self.nodes_set:
-            for j in range(self.num_nodes):
-                if self.orgin_graph[i, j]:
-                    actions[j] = 1
-        for i in self.nodes_set:
-            actions[i] = 0
+        """
+            return: [0, 1, 25, ..., 39]
+        """
+        if len(self.nodes_selected) == 0:
+            return [i for i in range(self.num_graph_nodes)]
+        actions = []
+        for i in self.nodes_selected:
+            idx = self.graph[i].copy()
+            idx[i] = 0
+            actions.extend(np.where(idx > 0)[0])
+        actions = np.unique(actions)
+
         return actions
 
     def get_random_action(self):
-        # TODO: 直接返回一个可用的动作
         actions = self.get_valid_actions()
         action_step = []
-        for i in range(self.num_nodes):
+        for i in range(self.num_graph_nodes):
             if actions[i] == 1:
                 action_step.append(i)
         action = action_step[np.random.randint(0, len(action_step))]
         return action
+
+    def get_correct_action(self):
+        return self.sub_graph_nodes[self.nodes_sorted[self.steps]]
+
+    def get_edge_indexes(self, actions):
+        idx = self.edge_index[0]
+        for i in range(1, self.num_graph_nodes):
+            idx = np.c_[idx, self.edge_index[i]]
+        return idx
+
+    def get_node_features(self, actions):
+        # feats = self.graph[actions]
+        # point = self.sub_graph[self.nodes_sorted[self.steps]]
+        # point = np.concatenate([point, np.zeros(32 - len(point))])
+        # repeat_points = np.tile(point, (len(actions), 1))
+        # feats = np.c_[feats, repeat_points]
+        feats = self.graph
+        point = self.sub_graph[self.nodes_sorted[self.steps]]
+        point = np.concatenate([point, np.zeros(32 - len(point))])
+        repeat_points = np.tile(point, (self.num_graph_nodes, 1))
+        feats = np.c_[feats, repeat_points]
+        return feats
+
+    def step(self, action):
+        """
+            action: int, 表示第几个点, [0, self.num_nodes - 1]
+        """
+
+        self.steps += 1
+        self.nodes_selected.append(action)
+
+        if self.steps == self.sub_graph.shape[0]:
+            self.terminated = True
+            return None, self.get_simple_reward(), self.is_terminated(), None
+
+        val_actions = self.get_valid_actions()
+        node_feats = self.get_node_features(val_actions)
+        edge_indexes = self.get_edge_indexes(val_actions)
+        next_state = {"x": node_feats, "edge_index": edge_indexes, "valid_actions": val_actions}
+
+        reward = self.get_simple_reward() * len(self.nodes_selected) / self.num_subgraph_nodes
+
+        self.graph[action] = [0] * self.num_graph_nodes
+        return next_state, reward, self.is_terminated(), val_actions
+
+
+if __name__ == '__main__':
+    GraphMatchingEnv()
