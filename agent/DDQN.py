@@ -1,3 +1,6 @@
+import time
+from copy import deepcopy
+
 import torch
 import torch.optim as optim
 import torch.nn.functional as F
@@ -26,18 +29,22 @@ class DDQN(object):
         self.target_net.load_state_dict(self.current_net.state_dict())
         self.target_net.eval()
 
-        self.optimizer = optim.Adam(self.current_net.parameters())
+        self.optimizer = optim.Adam(self.current_net.parameters(), lr=5e-4)
         self.memory = ReplayBuffer(args.replay_size)
 
         self.steps_cnt = 0
+
+        self.create_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
     def select_action(self, data, valid_actions=None):
         """
             Sample an action from categorical distribution.
         """
         x = self.current_net(data).view(-1)
+        q = torch.ones_like(x) * -9e15
+
         if valid_actions is not None:
-            x[valid_actions] = -9e15
+            q[valid_actions] = x[valid_actions]
         dist = Categorical(F.softmax(x, dim=0))
         action = dist.sample()
         return action.cpu().item()
@@ -48,13 +55,14 @@ class DDQN(object):
         """
         with torch.no_grad():
             x = self.current_net(data).view(-1)
-            if valid_actions:
-                x[valid_actions] = -9e15
-            return torch.argmax(x)
+            q = torch.ones_like(x) * -9e15
+            if valid_actions is not None:
+                q[valid_actions] = x[valid_actions]
+            return torch.argmax(q)
 
     def optimize(self):
         if self.memory.size() < self.args.batch_size:
-            return
+            return 0
         transitions = self.memory.sample(self.args.batch_size)
         # Transpose the batch (see https://stackoverflow.com/a/19343/3343043 for
         # detailed explanation). This converts batch-array of Transitions
@@ -92,7 +100,6 @@ class DDQN(object):
         expected_state_action_values = (next_state_values * self.args.gamma) + batch_rewards
         # Compute MSE loss
         loss = F.mse_loss(state_action_values, expected_state_action_values)
-        print(loss)
 
         # Optimize the model
         self.optimizer.zero_grad()
@@ -102,4 +109,14 @@ class DDQN(object):
         for param in self.current_net.parameters():
             param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
+        return loss.item()
 
+    def save(self, filename):
+        torch.save(self.current_net.state_dict(), filename + self.create_time + "_current")
+        torch.save(self.optimizer.state_dict(), filename + self.create_time + "_current_optimizer")
+
+
+    def load(self, filename):
+        self.current_net.load_state_dict(torch.load(filename + "_current"))
+        self.optimizer.load_state_dict(torch.load(filename + "_current_optimizer"))
+        self.target_net = deepcopy(self.current_net)
