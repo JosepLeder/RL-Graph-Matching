@@ -8,6 +8,26 @@ from collections import deque, namedtuple
 from torch_geometric.data import Data
 
 
+def topological_reconstruct(st, graph):
+    n_nodes = graph.shape[0]
+    map2 = np.zeros([n_nodes, n_nodes])
+    l1, l2 = [], []
+    al_nodes = [True] * n_nodes
+    l1.append(st)
+    al_nodes[st] = False
+    while l1:
+        l2.append(l1[0])
+        for i in range(n_nodes):
+            if graph[l1[0], i] and al_nodes[i]:
+                l1.append(i)
+                al_nodes[i] = False
+        del l1[0]
+    for i1, i2 in enumerate(l2):
+        for j1, j2 in enumerate(l2):
+            map2[i1, j1] = graph[i2, j2]
+    return map2, l2
+
+
 def plot_graph(graph):
 
     # 绘制母图
@@ -22,6 +42,15 @@ def plot_graph(graph):
     nx.draw_networkx_nodes(g, position, nodelist=nodes, node_color="r")
     nx.draw_networkx_edges(g, position)
     nx.draw_networkx_labels(g, position)
+    plt.show()
+
+
+def plot_digraph(digraph):
+    nodes = range(len(digraph.nodes))
+    position = nx.circular_layout(digraph)
+    nx.draw_networkx_nodes(digraph, position, nodelist=nodes, node_color="r")
+    nx.draw_networkx_edges(digraph, position)
+    nx.draw_networkx_labels(digraph, position)
     plt.show()
 
 
@@ -76,3 +105,15 @@ class ReplayBuffer(object):
 
     def __len__(self):
         return len(self.memory)
+
+
+if __name__ == '__main__':
+    graph = np.load("/home/josep/code/python/rlcode/graph_matching_project/graph_matching/data/source.npy")
+    for i in range(graph.shape[0]):
+        graph[i][i] = 1
+        print(graph[i])
+    plot_graph(graph)
+    g, idx = topological_reconstruct(0, graph)
+    plot_graph(g)
+    for i in g:
+        print(i)
