@@ -4,17 +4,16 @@ import torch
 import numpy as np
 
 from agent.DDQN import DDQN
+from agent.BaseDFS import BaseDeepFirstSearch
 from copy import deepcopy
 from utils.utils import state2data
 
 
-class DeepFirstSearchDDQN(object):
+class DDQN_DeepFirstSearch(BaseDeepFirstSearch):
 
-    def __init__(self, args, env):
+    def __init__(self, args, env, threshold=int(5e3)):
+        super(DDQN_DeepFirstSearch, self).__init__(env, threshold)
         self.ddqn = DDQN(args)
-        self.ddqn.load(args.load_dir)
-        self.env = env
-        self.device = torch.device("cpu")
 
         # Calculate Q values
         self.q_values = []
@@ -34,17 +33,23 @@ class DeepFirstSearchDDQN(object):
             # Move to the next state
             state = state2data(state, self.device)
 
-        self.neg_set = set()
-        self.steps = 0
-
 
     def dfs(self, nodes_selected):
-
+        
         self.steps += 1
-
+        self.total_steps += 1
+        # Limit DFS steps
+        if self.steps > self.threshold:
+            return False
         if self.env.is_match(nodes_selected):
-            print(nodes_selected)
+
             ns = len(nodes_selected)
+            if ns > self.best_score:
+                self.x_steps.append(self.total_steps)
+                self.y_rewards.append(ns)
+                print(self.total_steps, ns)
+                print(nodes_selected)
+                self.best_score = ns
             if ns == self.subgraph.shape[0]:
                 return True
             else:
@@ -59,5 +64,3 @@ class DeepFirstSearchDDQN(object):
                             nodes_selected.pop(-1)
         else:
             return False
-
-

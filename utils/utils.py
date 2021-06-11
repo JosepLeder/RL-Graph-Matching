@@ -1,3 +1,4 @@
+import json
 import random
 import numpy as np
 import torch
@@ -79,6 +80,16 @@ def state2data(state, device):
 
 def state2tensor(state, device):
     return th.tensor(state, dtype=th.float).unsqueeze(0).to(device)
+
+
+def save_dict(filename, dct):
+    with open(filename, 'w') as f:
+        json.dump(dct, f)
+
+
+def load_dict(filename):
+    with open(filename, 'r') as f:
+        return json.load(f)
 
 
 # define transition
