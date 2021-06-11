@@ -4,11 +4,13 @@ import numpy as np
 from itertools import count
 
 import torch
+import torch.nn.functional as F
 
 from agent.DDQN import DDQN
-from agent.DFS_DDQN import DeepFirstSearchDDQN
+from agent.BaseDFS import BaseDeepFirstSearch
+from agent.DFS_DDQN import DDQN_DeepFirstSearch
 from env.graph_matching_env import GraphMatchingEnv
-from utils.utils import state2data
+from utils.utils import state2data, save_dict
 
 
 def parseargs():
@@ -35,10 +37,11 @@ def parseargs():
     parser.add_argument('--eval_freq', type=int, help='Evaluate frequency', default=int(1))
 
     parser.add_argument('--save_dir', type=str, help='Path to save the model', default='results/')
-    parser.add_argument('--load_dir', type=str, help='Path to load the model', default='results/')
+    parser.add_argument('--load_dir', type=str, help='Path to load the model', default=None)
 
     # test configures
     parser.add_argument('--test', type=bool, help='Training or testing.', default=True)
+    parser.add_argument('--agent', type=str, help='Agent to use for training.', default="DDQN_DFS")
     parser.add_argument('--random_subgraph', type=bool,
                         help='Use random subgraph for testing if true, false otherwise.',
                         default=False)
@@ -83,20 +86,25 @@ def evaluate_model(agent, env):
     return mean
 
 
-def train_model(args, agent, env):
+def train_model(args, agent, env, filename=None):
 
     keys = agent.current_net.state_dict().keys()
 
     train_step = 0
     eps = 0
     best_score = 0
+    x_steps = []
+    y_rewards = []
     while train_step < args.maxsteps:
 
-        if eps % args.eval_freq == 0:
+        if train_step % args.eval_freq == 0:
             score = evaluate_model(agent, env)
             if score > best_score:
                 best_score = score
-                agent.save(args.save_dir)
+                if args.save_dir is not None:
+                    agent.save(args.save_dir)
+            x_steps.append(train_step)
+            y_rewards.append(best_score)
             print("avg score: {}, best score: {}".format(score, best_score))
 
         # Initialize the environment and state
@@ -107,8 +115,8 @@ def train_model(args, agent, env):
         valid_actions = None
         for t in count():
             # Select and perform an action
-            if (not args.test) and (agent.memory.size() >= args.sample_size):
-                action = agent.select_best_action(state, valid_actions)
+            if agent.memory.size() >= args.sample_size:
+                action = agent.select_action(state, valid_actions)
             else:
                 action = env.get_correct_action()
 
@@ -127,9 +135,12 @@ def train_model(args, agent, env):
             # Move to the next state
             state = next_state
 
-            if done:
+            if done or reward == 0:
+                train_step += t
+                eps += 1
                 # Perform one step of the optimization (on the target network)
                 loss = agent.optimize()
+                print("Trsinstep: {} Episode: {}, loss: {}".format(train_step, eps, loss))
 
                 # Update the target network using alternative target network method
                 # phi = tau * phi + (1 - tau) * phi_updated
@@ -138,12 +149,14 @@ def train_model(args, agent, env):
                 for key in keys:
                     target_state[key] = args.tau * target_state[key] + (1 - args.tau) * policy_state[key]
                 agent.target_net.load_state_dict(target_state)
-
-                train_step += t
-                eps += 1
-
-                print("Episode: {}, loss: {}".format(eps, loss))
                 break
+
+    if filename is not None:
+        dct = {
+            "x": x_steps,
+            "y": y_rewards
+        }
+        save_dict(filename, dct)
 
 
 
@@ -152,10 +165,31 @@ if __name__ == '__main__':
 
     env = GraphMatchingEnv(args)
     if args.test:
-        args.load_dir = args.load_dir + "2021-06-06 22:12:26"
-        agent = DeepFirstSearchDDQN(args, env)
-        agent.dfs([])
-        print(agent.steps)
+        if args.agent == "DFS":
+            agent = BaseDeepFirstSearch(env)
+            agent.threshold = int(1e6)
+            agent.dfs([])
+            agent.save_result()
+        elif args.agent == "DDQN_DFS":
+            args.load_dir = "results/2021-06-06 22:12:26"
+            agent = DDQN_DeepFirstSearch(args, env)
+            q = agent.q_values[0]
+            prob = F.softmax(q, dim=0)
+            for i in range(200):
+                agent.steps = 0
+                agent.threshold = int(prob[i] * 1e6)
+                agent.dfs([i])
+            agent.save_result()
+        elif args.agent == "DDQN":
+            args.save_dir = None
+            agent = DDQN(args)
+            train_model(args, agent, env, "DDQN.json")
+        elif args.agent == "pretrain_DDQN":
+            # args.save_dir = None
+            args.load_dir = "results/2021-06-06 22:12:26"
+            agent = DDQN(args)
+            train_model(args, agent, env, "results/pretrain_DDQN.json")
+
     else:
         agent = DDQN(args)
         train_model(args, agent, env)

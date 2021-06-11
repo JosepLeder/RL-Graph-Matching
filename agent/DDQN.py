@@ -36,6 +36,9 @@ class DDQN(object):
 
         self.create_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
 
+        if args.load_dir is not None:
+            self.load(args.load_dir)
+
     def select_action(self, data, valid_actions=None):
         """
             Sample an action from categorical distribution.
